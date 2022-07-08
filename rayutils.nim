@@ -618,3 +618,5 @@ func SetMousePosition*(v : Vector2) = SetMousePosition(v.x.int, v.y.int)
 template lerp*[T](a, b : T, c : int | SomeFloat) : untyped = a + (b - a)*c ## Moves a towards b linearly by a factory of c
 
 proc parseInt*(c : char) : int = parseInt $c
+
+func manhattanDist*(v, v1 : Vector2) : SomeFloat = abs(v1.x - v.x) + abs(v1.y - v.y) ## unsigned distance
