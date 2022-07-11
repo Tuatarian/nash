@@ -1,6 +1,6 @@
 import raylib, rayutils, math, sugar, sequtils, zero_functional
 
-type Stone = enum
+type Stone* = enum
     BL, WH, NONE
 
 type Hex* = object
@@ -46,6 +46,8 @@ func getAdj*(ind : int, board : Board) : seq[int] =
              opos + makevec2(0, 1),
              opos + makevec2(1, 0)
             ].filter(v => v in makerect(makevec2(0, 0), makevec2(12, 12))).map(x => posToInd x)
+
+func ind*(h : Hex) : int = return h.pos.posToInd
 
 func checkVictory*(b : Board, ind : int) : bool =
     var traversed = @[ind]
