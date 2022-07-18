@@ -161,18 +161,18 @@ proc evald0(b : Board) : float =
     let hexList = b.hexes
     var mpW0, mpW1, mpB0, mpB1 = 500
     let (wStones, bStones) = (hexList.filter(x => x.stone == WH).map(x => x.pos.posToInd()), hexList.filter(x => x.stone == BL).map(x => x.pos.posToInd))
-    for i in 0..<wStones.len:
-        let pw0Len = pathToWall0(b, i, true).len
+    for s in wStones:
+        let pw0Len = pathToWall0(b, s, true).len
         if pw0Len < mpW0:
             mpW0 = pw0Len
-        let pw1Len = pathToWall1(b, i, true).len
+        let pw1Len = pathToWall1(b, s, true).len
         if pw1Len < mpW1:
             mpW1 = pw1Len
-    for i in 0..<bStones.len:
-        let pw0Len = pathToWall0(b, i, false).len
+    for s in bStones:
+        let pw0Len = pathToWall0(b, s, false).len
         if pw0Len < mpB0:
             mpB0 = pw0Len
-        let pw1Len = pathToWall1(b, i, false).len
+        let pw1Len = pathToWall1(b, s, false).len
         if pw1Len < mpB1:
             mpB1 = pw1Len
     let (mpW, mpB) = (mpW0 + mpW1, mpB0 + mpB1)
