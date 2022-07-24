@@ -1,4 +1,4 @@
-import raylib, jnhex, zero_functional, sequtils, rayutils, tables, heapqueue, lenientops, sugar, algorithm, random, std/enumerate
+import raylib, jnhex, zero_functional, sequtils, rayutils, tables, heapqueue, lenientops, sugar, algorithm, random, std/enumerate, sets, hashes
 
 randomize()
 
@@ -39,57 +39,84 @@ func astar(b : Board, h, g : int) : seq[int] =
                 cSteps[w] = wSteps
                 path[w] = c
 
-func pathToWall0(b : Board, h : int, whiteMoves : bool) : seq[int] =
+func pathToWall(b : Board, whiteMoves : bool) : (seq[int], seq[int]) =
     let hexList = b.hexes
-    var path : Table[int, int] = {h : -1}.toTable
-    var sFront = @[h]
+    var path : Table[int, int] = hexList.filter(x => x.stone == stArr[whiteMoves]).map(x => (x.pos.posToInd, -1)).toTable
+    var sFront = path.keys.toSeq
+    var costs : Table[int, int] = path.keys.toSeq.map(x => (x, 0)).toTable # (inx, cost) // cost == 1 if hex empty, cost == 0 if hex has correct color
     var c : int # current
+    var done : (bool, bool)
 
     if whiteMoves:
         while sFront.len > 0:
             c = sFront.pop()
             if hexList[c].pos.x == 0:
-                return getPath(path, c).reversed
+                result[0] = getPath(path, c).reversed.filter(x => hexList[x].stone == NONE)
+                done[0] = true
+                if done[1]:
+                    return result
+            elif hexList[c].pos.x == 12:
+                result[1] = getPath(path, c).reversed.filter(x => hexList[x].stone == NONE)
+                done[1] = true
+                if done[0]:
+                    return result
 
             for w in getAdj(c, b):
-                if w notin path.keys.toSeq and hexList[w].stone == NONE:
+                if hexList[w].stone != BL and (w notin path.keys.toSeq or costs[c] + int(hexList[w].stone == NONE) < costs[w]):
                     sFront.add w
                     path[w] = c
+                    costs[w] = costs[c] + int(hexList[w].stone == NONE)
     else:
         while sFront.len > 0:
             c = sFront.pop()
             if hexList[c].pos.y == 0:
-                return getPath(path, c).reversed
+                result[0] = getPath(path, c).reversed.filter(x => hexList[x].stone == NONE)
+                done[0] = true
+                if done[1]:
+                    return result
+            elif hexList[c].pos.y == 12:
+                result[1] = getPath(path, c).reversed.filter(x => hexList[x].stone == NONE)
+                done[1] = true
+                if done[0]:
+                    return result
 
             for w in getAdj(c, b):
-                if w notin path.keys.toSeq and hexList[w].stone == NONE:
+                if hexList[w].stone != WH and (w notin path.keys.toSeq or costs[c] + int(hexList[w].stone == NONE) < costs[w]):
                     sFront.add w
                     path[w] = c
+                    costs[w] = costs[c] + int(hexList[w].stone == NONE)
+
+func pwLen(b : Board, whiteMoves : bool) : int =
+     let res = b.pathToWall whiteMoves
+     debugEcho res[0].map(x => b.hexes[x].pos), res[1].map(x => b.hexes[x].pos)
+     return res[0].len + res[1].len
 
 func pathToWall1(b : Board, h : int, whiteMoves : bool) : seq[int] =
     let hexList = b.hexes
     var path : Table[int, int] = {h : -1}.toTable
     var sFront = @[h]
+    var costs : Table[int, int] = {h : 0}.toTable # (inx, cost) // cost == 1 if hex empty, cost == 0 if hex has correct color
     var c : int # current
 
     if whiteMoves:
         while sFront.len > 0:
             c = sFront.pop()
             if hexList[c].pos.x == 12:
-                return getPath(path, c).reversed
+                return getPath(path, c).reversed.filter(x => hexList[x].stone == NONE)
 
             for w in getAdj(c, b):
-                if w notin path.keys.toSeq and hexList[w].stone == NONE:
+                if hexList[w].stone != BL and (w notin path.keys.toSeq or costs[c] + int(hexList[w].stone == NONE) < costs[w]):
                     sFront.add w
                     path[w] = c
+                    costs[w] = costs[c] + int(hexList[w].stone == NONE)
     else:
         while sFront.len > 0:
             c = sFront.pop()
             if hexList[c].pos.y == 12:
-                return getPath(path, c).reversed
+                return getPath(path, c).reversed.filter(x => hexList[x].stone == NONE)
 
             for w in getAdj(c, b):
-                if w notin path.keys.toSeq and hexList[w].stone == NONE:
+                if w notin path.keys.toSeq and hexList[w].stone != WH:
                     sFront.add w
                     path[w] = c
 
@@ -146,38 +173,31 @@ func remove3cycPseudos(r : seq[(int, int)], b : Board) : seq[(int, int)] =
     for inx, d in enumerate(markedForDel):
         result.delete(d.int - inx)
 
-func fillPseudos(pseudos : seq[(int, int)], r : int = rand(0..1), b : Board) : Board =
+func fillPseudos(pseudos : seq[(int, int)], b : Board) : Board =
     let hexList = b.hexes
     result = b
     for i in 0..<pseudos.len:
         let l1 = pseudos[i][0]
         let l2 = pseudos[i][1]
         let l1Adj = getAdj(l1, b)
-        result.hexes[getAdj(l2, b).filter(x => x in l1Adj)[r]].stone = hexList[l1].stone
+        result.hexes[getAdj(l2, b).filter(x => x in l1Adj)[0]].stone = hexList[l1].stone
 
-proc evald0(b : Board) : float =
-    var b = b.findPseudos.remove3cycPseudos(b).fillPseudos(rand(0..1), b)
+func evald0(b : Board) : float =
+    var b = b.findPseudos.remove3cycPseudos(b).fillPseudos(b)
     debugEcho b.hFen
     let hexList = b.hexes
-    var mpW0, mpW1, mpB0, mpB1 = 500
-    let (wStones, bStones) = (hexList.filter(x => x.stone == WH).map(x => x.pos.posToInd()), hexList.filter(x => x.stone == BL).map(x => x.pos.posToInd))
-    for s in wStones:
-        let pw0Len = pathToWall0(b, s, true).len
-        if pw0Len < mpW0:
-            mpW0 = pw0Len
-        let pw1Len = pathToWall1(b, s, true).len
-        if pw1Len < mpW1:
-            mpW1 = pw1Len
-    for s in bStones:
-        let pw0Len = pathToWall0(b, s, false).len
-        if pw0Len < mpB0:
-            mpB0 = pw0Len
-        let pw1Len = pathToWall1(b, s, false).len
-        if pw1Len < mpB1:
-            mpB1 = pw1Len
-    let (mpW, mpB) = (mpW0 + mpW1, mpB0 + mpB1)
-    return float(mpB - mpW)
+    # let (wStones, bStones) = (hexList.filter(x => x.stone == WH).map(x => x.pos.posToInd()), hexList.filter(x => x.stone == BL).map(x => x.pos.posToInd))
+    var (mpW, mpB) = (pwLen(b, true), pwLen(b, false))
+    debugEcho mpW, mpB
+    return float mpB - mpW
 
+
+func getMoves(b : Board, whiteMoves : bool) : seq[int] =
+    for i in 0..<b.hexes.len:
+        if b.hexes[i].stone == NONE:
+            result.add i
+
+func hash(h : Hex) : Hash = hash(h.pos)
 
 let str = "32w22w1w22b13b13b10b"
 let board = str.loadHFen
