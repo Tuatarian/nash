@@ -39,56 +39,57 @@ func astar(b : Board, h, g : int) : seq[int] =
                 cSteps[w] = wSteps
                 path[w] = c
 
-func pathToWall(b : Board, whiteMoves : bool) : (seq[int], seq[int]) =
+func pathToWall(b : Board, h : int, whiteMoves : bool) : (seq[int], seq[int]) =
     let hexList = b.hexes
-    var path : Table[int, int] = hexList.filter(x => x.stone == stArr[whiteMoves]).map(x => (x.pos.posToInd, -1)).toTable
-    var sFront = path.keys.toSeq
-    var costs : Table[int, int] = path.keys.toSeq.map(x => (x, 0)).toTable # (inx, cost) // cost == 1 if hex empty, cost == 0 if hex has correct color
+    var path : Table[int, int] = {h : -1}.toTable
+    var sFront : HeapQueue[LocPri]= [(h, 0.001f64)].toHeapQueue
+    var costs : Table[int, int] = {h : 0}.toTable # (inx, cost) // cost == 1 if hex empty, cost == 0 if hex has correct color
     var c : int # current
     var done : (bool, bool)
 
     if whiteMoves:
         while sFront.len > 0:
-            c = sFront.pop()
-            if hexList[c].pos.x == 0:
+            c = sFront.pop()[0]
+            if hexList[c].pos.x == 0 and not done[0]:
                 result[0] = getPath(path, c).reversed.filter(x => hexList[x].stone == NONE)
                 done[0] = true
                 if done[1]:
                     return result
-            elif hexList[c].pos.x == 12:
+            elif hexList[c].pos.x == 12 and not done[1]:
                 result[1] = getPath(path, c).reversed.filter(x => hexList[x].stone == NONE)
                 done[1] = true
                 if done[0]:
                     return result
 
             for w in getAdj(c, b):
-                if hexList[w].stone != BL and (w notin path.keys.toSeq or costs[c] + int(hexList[w].stone == NONE) < costs[w]):
-                    sFront.add w
+                let wSteps = costs[c] + int(hexList[w].stone == NONE)
+                if hexList[w].stone != BL and (w notin path.keys.toSeq or wSteps < costs[w]):
+                    sFront.push (w, wSteps.float)
                     path[w] = c
                     costs[w] = costs[c] + int(hexList[w].stone == NONE)
     else:
         while sFront.len > 0:
-            c = sFront.pop()
-            if hexList[c].pos.y == 0:
+            c = sFront.pop()[0]
+            if hexList[c].pos.y == 0 and not done[0]:
                 result[0] = getPath(path, c).reversed.filter(x => hexList[x].stone == NONE)
                 done[0] = true
                 if done[1]:
                     return result
-            elif hexList[c].pos.y == 12:
+            elif hexList[c].pos.y == 12 and not done[1]:
                 result[1] = getPath(path, c).reversed.filter(x => hexList[x].stone == NONE)
                 done[1] = true
                 if done[0]:
                     return result
 
             for w in getAdj(c, b):
-                if hexList[w].stone != WH and (w notin path.keys.toSeq or costs[c] + int(hexList[w].stone == NONE) < costs[w]):
-                    sFront.add w
-                    path[w] = c
-                    costs[w] = costs[c] + int(hexList[w].stone == NONE)
+                 let wSteps = costs[c] + int(hexList[w].stone == NONE)
+                 if hexList[w].stone != WH and (w notin path.keys.toSeq or wSteps < costs[w]):
+                     sFront.push (w, wSteps.float)
+                     path[w] = c
+                     costs[w] = costs[c] + int(hexList[w].stone == NONE)
 
-func pwLen(b : Board, whiteMoves : bool) : int =
-     let res = b.pathToWall whiteMoves
-     debugEcho res[0].map(x => b.hexes[x].pos), res[1].map(x => b.hexes[x].pos)
+func pwLen(b : Board, h : int, whiteMoves : bool) : int =
+     let res = b.pathToWall(h, whiteMoves)
      return res[0].len + res[1].len
 
 func pathToWall1(b : Board, h : int, whiteMoves : bool) : seq[int] =
@@ -186,10 +187,23 @@ func evald0(b : Board) : float =
     var b = b.findPseudos.remove3cycPseudos(b).fillPseudos(b)
     debugEcho b.hFen
     let hexList = b.hexes
-    # let (wStones, bStones) = (hexList.filter(x => x.stone == WH).map(x => x.pos.posToInd()), hexList.filter(x => x.stone == BL).map(x => x.pos.posToInd))
-    var (mpW, mpB) = (pwLen(b, true), pwLen(b, false))
-    debugEcho mpW, mpB
-    return float mpB - mpW
+    let (wStones, bStones) = (hexList.filter(x => x.stone == WH).map(x => x.pos.posToInd()), hexList.filter(x => x.stone == BL).map(x => x.pos.posToInd))
+    var mpW, mpB = 500
+    for w in wStones:
+        let wPwLen = pwLen(b, w, true)
+        if wPwLen < mpW:
+            debugEcho pathToWall(b, w, true)[1].map(x => b.hexes[x].pos)
+            mpW = wPwLen
+            debugEcho b.hexes[w].pos, "W"
+    for w in bStones:
+        let bPwLen = pwLen(b, w, false)
+        if bPwLen < mpB:
+            debugEcho pathToWall(b, w, false)[0].map(x => b.hexes[x].pos)
+            debugEcho pathTowall(b, w, false)[1].map(x => b.hexes[x].pos)
+            mpB = bPwLen
+            debugEcho b.hexes[w].pos, "b"
+    debugEcho mpB, mpW
+    return float mpW - mpB
 
 
 func getMoves(b : Board, whiteMoves : bool) : seq[int] =
