@@ -1,6 +1,9 @@
-import raylib, jnhex, zero_functional, sequtils, rayutils, tables, heapqueue, lenientops, sugar, algorithm, random, std/enumerate, sets, hashes
+import raylib, jnhex, zero_functional, sequtils, rayutils, tables, heapqueue, lenientops, sugar, algorithm, random, std/enumerate, hashes
 
 randomize()
+
+func `in`(i : int, i2 : (int, int)) : bool =
+    return i == i2[0] or i == i2[1]
 
 type LocPri = (int, float)
 
@@ -42,6 +45,7 @@ func astar(b : Board, h, g : int) : seq[int] =
 func pathToWall(b : Board, h : int, whiteMoves : bool) : (seq[int], seq[int]) =
     let hexList = b.hexes
     var path : Table[int, int] = {h : -1}.toTable
+    var pkeys : seq[int] = path.keys.toSeq
     var sFront : seq[LocPri]= @[(h, 0.001f64)]
     var costs : Table[int, int] = {h : 0}.toTable # (inx, cost) // cost == 1 if hex empty, cost == 0 if hex has correct color
     var c : int # current
@@ -65,10 +69,11 @@ func pathToWall(b : Board, h : int, whiteMoves : bool) : (seq[int], seq[int]) =
 
             for w in getAdj(c, b):
                 let wSteps = costs[c] + int(hexList[w].stone == NONE)
-                if hexList[w].stone != BL and (w notin path.keys.toSeq or wSteps < costs[w]):
+                if hexList[w].stone != BL and (w notin pkeys or wSteps < costs[w]):
                     sFront.add (w, wSteps.float)
                     path[w] = c
-                    costs[w] = costs[c] + int(hexList[w].stone == NONE)
+                    pkeys.add w
+                    costs[w] = wSteps
     else:
         while sFront.len > 0:
             let minx = minIndex sFront
@@ -87,10 +92,11 @@ func pathToWall(b : Board, h : int, whiteMoves : bool) : (seq[int], seq[int]) =
 
             for w in getAdj(c, b):
                  let wSteps = costs[c] + int(hexList[w].stone == NONE)
-                 if hexList[w].stone != WH and (w notin path.keys.toSeq or wSteps < costs[w]):
+                 if hexList[w].stone != WH and (w notin pkeys or wSteps < costs[w]):
                      sFront.add (w, wSteps.float)
                      path[w] = c
-                     costs[w] = costs[c] + int(hexList[w].stone == NONE)
+                     pkeys.add w
+                     costs[w] = wSteps
 
 func pwLen(b : Board, h : int, whiteMoves : bool) : int =
      let res = b.pathToWall(h, whiteMoves)
@@ -217,23 +223,25 @@ echo evald0 board
 var depth : int
 var turn = 0
 
-func search(d : int, b : Board, whiteMoves : bool) : (float, int) =
+func search(d : int, b : Board, whiteMoves : bool, e1, e2 : float) : (float, int) =
     var b = b
-    var extremum : float
+    var (e1, e2) = (e1, e2)
     if d == 0:
         return (evald0(b), -1)
     for i in b.getMoves:
-        debugEcho i
+        if i mod 20 == 0:
+            debugEcho i
         b.hexes[i].stone = stArr[whiteMoves]
-        let z = search(d - 1, b, not whiteMoves)
+        let z = search(d - 1, b, not whiteMoves, e2, e1)
         b.hexes[i].stone = NONE
-        if z[0] < extremum == whiteMoves:
-            extremum = z[0]
+        if z[0] >= e2 == whiteMoves:
+            debugEcho "snip"
+            return (e2, -1)
+        if z[0] < e1 == whiteMoves:
+            e1 = z[0]
             result = (z[0], i)
 
 depth = 2
-let res = search(depth, board, turn mod 2 == 1)
+let res = search(depth, board, turn mod 2 == 1, float.high, float.low)
 echo res
-
-
 
