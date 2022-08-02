@@ -206,6 +206,10 @@ func evald0(b : Board) : float =
         let bPwLen = pwLen(b, w, false)
         if bPwLen < mpB:
             mpB = bPwLen
+    if mpB == 0:
+        return float.high
+    elif mpW == 0:
+        return float.low
     return float mpW - mpB
 
 
@@ -223,18 +227,17 @@ echo evald0 board
 var depth : int
 var turn = 0
 
-func search(d : int, b : Board, whiteMoves : bool, e1, e2 : float) : (float, int) =
+func miniMax(d : int, b : Board, whiteMoves : bool, e1, e2 : float) : (float, int) = ## this has a-b pruning, but branching factor of Hex is just too high for it to be usable
     var b = b
     var (e1, e2) = (e1, e2)
     if d == 0:
         return (evald0(b), -1)
     for i in b.getMoves:
-        if i mod 20 == 0:
-            debugEcho i
+        if i mod 100 == 0: debugEcho i
         b.hexes[i].stone = stArr[whiteMoves]
-        let z = search(d - 1, b, not whiteMoves, e2, e1)
+        let z = miniMax(d - 1, b, not whiteMoves, e2, e1)
         b.hexes[i].stone = NONE
-        if z[0] >= e2 == whiteMoves:
+        if z[0] >= e2 == whiteMoves or z[0] == e2:
             debugEcho "snip"
             return (e2, -1)
         if z[0] < e1 == whiteMoves:
@@ -242,6 +245,39 @@ func search(d : int, b : Board, whiteMoves : bool, e1, e2 : float) : (float, int
             result = (z[0], i)
 
 depth = 2
-let res = search(depth, board, turn mod 2 == 1, float.high, float.low)
-echo res
 
+# MCTS
+
+type McNode = object
+    board : Board
+    kids : seq[McNode]
+    parentalUnit : McNode
+    wins, visits : int
+
+func getUnexploredMoves(n : McNode, b : Board, whiteMoves : bool) : seq[Board] =
+    var b = b
+    for i in 0..<b.hexes.len:
+        if b.hexes[i].stone == NONE:
+            b.hexes[i] = stArr[whiteMoves]
+            result.add b
+            b.hexes[i] = NONE
+
+func getMcUnexploredMoves(n : McNode, b : Board, whiteMoves : bool) : seq[Node] =
+    var b = b
+    for i in 0..<b.hexes.len:
+        if b.hexes[i].stone == NONE:
+            b.hexes[i] = stArr[whiteMoves]
+            result.add Node(board : b, parentalUnit : n)
+            b.hexes[i] = NONE
+
+func mcPick(n : Node) : Node =
+    var bestKid = (0, -1)
+    for i in 0..<n.kids.len:
+        let score = n.kids[i].wins/n.kids[i].visits + sqrt(4*n.visits)/n.kids[i]
+        if score > bestKid[0]:
+            bestKid = (score, i)
+    return n.kids[bestKid[0]]
+
+var mcRoot : Node = Node(board : board, parentalUnit : Node(visits : -1))
+for _ in 0..1000:
+    var 
