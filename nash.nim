@@ -1,4 +1,4 @@
-import raylib, jnhex, zero_functional, sequtils, rayutils, tables, heapqueue, lenientops, sugar, algorithm, random, std/enumerate, hashes
+import raylib, jnhex, zero_functional, sequtils, rayutils, tables, heapqueue, lenientops, sugar, algorithm, random, std/enumerate, hashes, math
 
 randomize()
 
@@ -248,36 +248,86 @@ depth = 2
 
 # MCTS
 
-type McNode = object
+type McNode = ref object
     board : Board
     kids : seq[McNode]
     parentalUnit : McNode
     wins, visits : int
+    whiteMoves : bool
 
-func getUnexploredMoves(n : McNode, b : Board, whiteMoves : bool) : seq[Board] =
+func getBoards(n : McNode, b : Board, whiteMoves : bool) : seq[Board] =
     var b = b
     for i in 0..<b.hexes.len:
         if b.hexes[i].stone == NONE:
-            b.hexes[i] = stArr[whiteMoves]
+            b.hexes[i].stone = stArr[whiteMoves]
             result.add b
-            b.hexes[i] = NONE
+            b.hexes[i].stone = NONE
 
-func getMcUnexploredMoves(n : McNode, b : Board, whiteMoves : bool) : seq[Node] =
-    var b = b
+func getMcBoards(n : McNode, whiteMoves : bool) : seq[McNode] =
+    var b = n.board
     for i in 0..<b.hexes.len:
         if b.hexes[i].stone == NONE:
-            b.hexes[i] = stArr[whiteMoves]
-            result.add Node(board : b, parentalUnit : n)
-            b.hexes[i] = NONE
+            b.hexes[i].stone = stArr[whiteMoves]
+            result.add McNode(board : b, parentalUnit : n, whiteMoves : not whiteMoves)
+            b.hexes[i].stone = NONE
 
-func mcPick(n : Node) : Node =
-    var bestKid = (0, -1)
-    for i in 0..<n.kids.len:
-        let score = n.kids[i].wins/n.kids[i].visits + sqrt(4*n.visits)/n.kids[i]
+func mcPick(n : McNode) : McNode =
+    var bestKid : (float, McNode) = (float.low, n.kids[0])
+    for kid in n.kids:
+        let score = kid.wins/kid.visits + sqrt(4f*n.visits)/kid.visits
         if score > bestKid[0]:
-            bestKid = (score, i)
-    return n.kids[bestKid[0]]
+            bestKid = (score, kid)
+    return bestKid[1]
 
-var mcRoot : Node = Node(board : board, parentalUnit : Node(visits : -1))
-for _ in 0..1000:
-    var 
+func mcWalk(rt : McNode) : McNode =  ## walk to a leaf/terminal node
+     result = rt
+     while result.kids.len == result.board.hexes.filter(x => x.stone == NONE).len:
+         result = mcPick result
+
+proc mcGrow(n : McNode) : McNode =
+    let mv = getMcBoards(n, n.whiteMoves).filter(x => x notin n.kids).sample
+    n.kids.add mv
+    return n.kids[^1]
+
+proc mcRollout(n : McNode) : int =
+    let results = [false : 1, true : 0]
+    var b = n.board
+    var whiteMoves = n.whiteMoves
+    var wStones, bStones : seq[int]
+    for i in 0..<b.hexes.len:
+        let stone = b.hexes[i].stone
+        if stone != NONE:
+            if stone == WH: wStones.add i
+            elif stone == BL: bstones.add i
+    for w in wStones:
+        if pwLen(b, w, true) == 0: return 0
+    for w in bStones:
+        if pwLen(b, w, false) == 0: return 1
+
+    while true:
+        var c = b.getMoves.sample
+        b.hexes[c].stone = stArr[whiteMoves]
+        if pwLen(b, c, whiteMoves) == 0: return results[whiteMoves]
+        whiteMoves = not whiteMoves
+
+func mcWalkBack(n : McNode, res : int) =
+    if n.parentalUnit.visits == -1:
+        return
+    var res = res
+    if n.whiteMoves: n.wins += 1 - res
+    else: n.wins += res
+    n.visits += 1
+    mcWalkBack(n.parentalUnit, res)
+
+proc mcMonte(rt : McNode) =
+    var leaf = rt.mcWalk
+    var tNode = leaf.mcGrow
+    var res = tNode.mcRollout
+    tNode.mcWalkBack(res)
+
+var mcRoot = McNode(board : board, parentalUnit : McNode(visits : -1))
+for o in 0..1000:
+    if o mod 120 == 0: echo o
+    mcRoot.mcMonte()
+echo mcRoot.mcPick.board.hexes.filter(x => x notin mcRoot.board.hexes)[0].pos
+echo mcRoot.mcPick.board.hFen, " <- ", mcRoot.board.hFen
