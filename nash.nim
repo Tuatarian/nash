@@ -5,7 +5,7 @@ randomize()
 func `in`(i : int, i2 : (int, int)) : bool =
     return i == i2[0] or i == i2[1]
 
-type LocPri = (int, float)
+type LocPri = (int, float64)
 
 func `<`(l : LocPri, l1 : LocPri) : bool = l[1] < l1[1]
 
@@ -281,7 +281,10 @@ func mcPick(n : McNode) : McNode =
 
 func mcWalk(rt : McNode) : McNode =  ## walk to a leaf/terminal node
      result = rt
-     while result.kids.len == result.board.hexes.filter(x => x.stone == NONE).len:
+     var tMoves : int
+     for z in result.board.hexes:
+         if z.stone == NONE: tMoves += 1
+     while result.kids.len == tMoves:
          result = mcPick result
 
 proc mcGrow(n : McNode) : McNode =
@@ -289,26 +292,74 @@ proc mcGrow(n : McNode) : McNode =
     n.kids.add mv
     return n.kids[^1]
 
-proc mcRollout(n : McNode) : int =
-    let results = [false : 1, true : 0]
-    var b = n.board
-    var whiteMoves = n.whiteMoves
-    var wStones, bStones : seq[int]
-    for i in 0..<b.hexes.len:
-        let stone = b.hexes[i].stone
-        if stone != NONE:
-            if stone == WH: wStones.add i
-            elif stone == BL: bstones.add i
-    for w in wStones:
-        if pwLen(b, w, true) == 0: return 0
-    for w in bStones:
-        if pwLen(b, w, false) == 0: return 1
+func mcCheckVic(b : Board) : int = # 1 for Black, -1 for white, 0 for neutral
+    let hexList = b.hexes
+    var sFront : seq[LocPri]
+    for i in 0..12:
+        if hexList[i].stone == BL:
+            sFront.add (i, 12f64)
+    var seen : set[uint8]
+    var c : int # current
 
-    while true:
-        var c = b.getMoves.sample
-        b.hexes[c].stone = stArr[whiteMoves]
-        if pwLen(b, c, whiteMoves) == 0: return results[whiteMoves]
-        whiteMoves = not whiteMoves
+    while sFront.len > 0:
+        let minx = minIndex sFront
+        c = sFront[minx][0]
+        sFront.del minx
+        if hexList[c].pos.y == 12: return 1
+
+        for w in getAdj(c, b):
+            if hexList[w].stone != BL and w.uint8 notin seen:
+                sFront.add (w, float64(12f64 - hexList[w].pos.y))
+                seen.incl w.uint8
+
+    sFront = @[]
+    for i in 0..12:
+      let ind = makevec2(0, i).posToInd
+      if hexList[ind].stone == WH:
+          sFront.add (makevec2(0, i).posToInd, 12f64)
+    seen = {}
+
+    while sFront.len > 0:
+        let minx = minIndex sFront
+        c = sFront[minx][0]
+        sFront.del minx
+        if hexList[c].pos.x == 12: return -1
+
+        for w in getAdj(c, b):
+            if hexList[w].stone != BL and w.uint8 notin seen:
+                sFront.add (w, float64(12- hexList[w].pos.x))
+                seen.incl w.uint8
+
+# proc mcRollout(n : McNode) : int =
+#     let results = [false : 1, true : 0]
+#     var b = n.board
+#     var whiteMoves = n.whiteMoves
+#     var wStones, bStones : seq[int]
+#     result = mcVicCheck(b)
+#     if result != 0: return result
+
+#     while true:
+#         var c = b.getMoves.sample
+#         b.hexes[c].stone = stArr[whiteMoves]
+#         if pwLen(b, c, whiteMoves) == 0: return results[whiteMoves]
+#         whiteMoves = not whiteMoves
+
+proc mcRollout(n : McNode) : int =
+    var b = n.board
+    var movesLeft : set[uint8]
+    for i in 0..<b.hexes.len:
+        if b.hexes[i].stone == NONE:
+            movesLeft.incl uint8 i
+    # var whiteMoves = n.whiteMoves # Not using tMoves mod 2 since I want to support impossible positions where one side has more stones
+    var r : int
+    let tMoves = movesLeft.len
+    let movesP1 = int grEqCeil(tMoves/2)
+    for i in movesLeft:
+        r = rand(0..<tMoves)
+        b.hexes[i].stone = stArr[r <= movesP1 == n.whiteMoves]
+    return mcCheckVic b
+
+
 
 func mcWalkBack(n : McNode, res : int) =
     if n.parentalUnit.visits == -1:
@@ -325,9 +376,10 @@ proc mcMonte(rt : McNode) =
     var res = tNode.mcRollout
     tNode.mcWalkBack(res)
 
-var mcRoot = McNode(board : board, parentalUnit : McNode(visits : -1))
-for o in 0..1000:
+var mcRoot = McNode(board : board.findPseudos.remove3cycPseudos(board).fillPseudos(board), parentalUnit : McNode(visits : -1))
+for o in 0..5000:
     if o mod 120 == 0: echo o
     mcRoot.mcMonte()
 echo mcRoot.mcPick.board.hexes.filter(x => x notin mcRoot.board.hexes)[0].pos
 echo mcRoot.mcPick.board.hFen, " <- ", mcRoot.board.hFen
+
