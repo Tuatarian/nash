@@ -256,7 +256,6 @@ type McNode = ref object
     whiteMoves : bool
     move : int # Move made to reach state
 
-
 func getBoards(n : McNode, b : Board, whiteMoves : bool) : seq[Board] =
     var b = b
     for i in 0..<b.hexes.len:
@@ -286,12 +285,14 @@ func mcWalk(rt : McNode) : McNode =  ## walk to a leaf/terminal node
      var tMoves : int
      for z in result.board.hexes:
          if z.stone == NONE: tMoves += 1
-     while result.kids.len == tMoves:
+     while result.kids.len == tMoves and tMoves != 0:
          result = mcPick result
+         tMoves += -1
 
 proc mcGrow(n : McNode) : McNode =
-    let mv = getMcBoards(n, n.whiteMoves).filter(x => x notin n.kids).sample
-    n.kids.add mv
+    let kidsMoves  = n.kids.map(x => x.move)
+    let mv = getMoves(n.board).filter(x => x notin kidsMoves).sample
+    n.kids.add McNode(parentalUnit : n, whiteMoves : not n.whiteMoves, board : makeMove(n.board, mv, n.whiteMoves), move : mv)
     return n.kids[^1]
 
 func mcCheckVic(b : Board) : int = # 1 for Black, -1 for white, 0 for neutral
@@ -346,7 +347,7 @@ func mcCheckVic(b : Board) : int = # 1 for Black, -1 for white, 0 for neutral
 #         if pwLen(b, c, whiteMoves) == 0: return results[whiteMoves]
 #         whiteMoves = not whiteMoves
 
-proc mcRollout(n : McNode) : int =
+proc mcRollout(n : McNode) : (int, set[uint8], set[uint8]) = # result, wMoves from playout, bMoves from playout
     var b = n.board
     var movesLeft : set[uint8]
     for i in 0..<b.hexes.len:
@@ -358,27 +359,47 @@ proc mcRollout(n : McNode) : int =
     let movesP1 = int grEqCeil(tMoves/2)
     for i in movesLeft:
         r = rand(0..<tMoves)
-        b.hexes[i].stone = stArr[r <= movesP1 == n.whiteMoves]
-    return mcCheckVic b
+        let wStone = r <= movesP1 == n.whiteMoves
+        b.hexes[i].stone = stArr[wStone]
+        if wStone:
+            result[1].incl i.uint8
+        else:
+            result[2].incl i.uint8
+    for i in 0..<169:
+        if b.hexes[i].stone == WH:
+            result[1].incl uint8 i
+        else:
+            result[2].incl i.uint8
+    result[0] = mcCheckVic b
 
-func mcWalkBack(n : McNode, res : int) =
-    if n.parentalUnit.visits == -1:
+func mcWalkBack(n : McNode, res : int, wMoves, bMoves : set[uint8]) =
+    if n.visits == -1:
         return
-    var res = res
+    if n.kids.len == 0:
+        mcWalkBack(n.parentalUnit, res, wMoves, bMoves)
     if n.whiteMoves: n.wins += 1 - res
     else: n.wins += res
-    n.visits += 1
-    mcWalkBack(n.parentalUnit, res)
+    if n.whiteMoves:
+        for kid in n.kids:
+            if kid.move.uint8 in wMoves:
+                kid.wins += 1
+                kid.visits += 1
+    else:
+        for kid in n.kids:
+            if kid.move.uint8 in bMoves:
+                kid.wins += 1
+                kid.visits += 1
+    mcWalkBack(n.parentalUnit, res, wMoves, bMoves)
 
 proc mcMonte(rt : McNode) =
     var leaf = rt.mcWalk
     var tNode = leaf.mcGrow
     var res = tNode.mcRollout
-    tNode.mcWalkBack(res)
+    tNode.mcWalkBack(res[0], res[1], res[2])
 
 var mcRoot = McNode(board : board, parentalUnit : McNode(visits : -1))
-for o in 0..100000:
-    if o mod 5000 == 0: echo o
+for o in 0..13^6:
+    if o mod 20000 == 0: echo o
     mcRoot.mcMonte()
 echo mcRoot.mcPick.board.hexes.filter(x => x notin mcRoot.board.hexes)[0].pos
 echo mcRoot.mcPick.board.hFen, " <- ", mcRoot.board.hFen
