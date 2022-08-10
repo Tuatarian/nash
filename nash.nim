@@ -324,12 +324,13 @@ func mcCheckVic(b : Board) : int = # 1 for Black, -1 for white, 0 for neutral
         let minx = minIndex sFront
         c = sFront[minx][0]
         sFront.del minx
-        if c.pos == 12: return -1
+        if c.pos.x == 12: return -1
 
-        for w in getAdj(c, b):
-            if hexList[w].stone != BL and w notin seen:
-                sFront.add (w, float64(12f64 - hexList[w].pos.x))
+        for w in getAdj(c):
+            if w in b.wStones and w notin seen:
+                sFront.add (w, float64(12f64 - w.pos.y))
                 seen.incl w
+
 
 # proc mcRollout(n : McNode) : int =
 #     let results = [false : 1, true : 0]
@@ -348,8 +349,8 @@ func mcCheckVic(b : Board) : int = # 1 for Black, -1 for white, 0 for neutral
 proc mcRollout(n : McNode) : (int, set[uint8], set[uint8]) = # result, wMoves from playout, bMoves from playout
     var b = n.board
     var movesLeft : set[uint8]
-    for i in 0..<b.hexes.len:
-        if b.hexes[i].stone == NONE:
+    for i in 0'u8..<bSize:
+        if i notin b.bStones and i notin b.wStones:
             movesLeft.incl uint8 i
     # var whiteMoves = n.whiteMoves # Not using tMoves mod 2 since I want to support impossible positions where one side has more stones
     var r : int
@@ -358,13 +359,13 @@ proc mcRollout(n : McNode) : (int, set[uint8], set[uint8]) = # result, wMoves fr
     for i in movesLeft:
         r = rand(0..<tMoves)
         let wStone = r <= movesP1 == n.whiteMoves
-        b.hexes[i].stone = stArr[wStone]
+        b.varMakeMove(r.u8, wStone)
         if wStone:
             result[1].incl i.uint8
         else:
             result[2].incl i.uint8
-    for i in 0..<169:
-        if b.hexes[i].stone == WH:
+    for i in 0'u8..<bSize:
+        if i in b.wStones:
             result[1].incl uint8 i
         else:
             result[2].incl i.uint8
@@ -380,12 +381,12 @@ func mcWalkBack(n : McNode, res : int, wMoves, bMoves : set[uint8]) =
     if n.whiteMoves:
         for kid in n.kids:
             if kid.move.uint8 in wMoves:
-                kid.wins += 1
+                kid.wins += res
                 kid.visits += 1
     else:
         for kid in n.kids:
             if kid.move.uint8 in bMoves:
-                kid.wins += 1
+                kid.wins += 1 - res
                 kid.visits += 1
     mcWalkBack(n.parentalUnit, res, wMoves, bMoves)
 
@@ -396,9 +397,9 @@ proc mcMonte(rt : McNode) =
     tNode.mcWalkBack(res[0], res[1], res[2])
 
 var mcRoot = McNode(board : board, parentalUnit : McNode(visits : -1))
-for o in 0..13^6:
+for o in 0..100000:
     if o mod 20000 == 0: echo o
     mcRoot.mcMonte()
-echo mcRoot.mcPick.board.hexes.filter(x => x notin mcRoot.board.hexes)[0].pos
+echo mcRoot.mcPick.board.diff(board).toSeq.map(x => x.pos)
 echo mcRoot.mcPick.board.hFen, " <- ", mcRoot.board.hFen
 
