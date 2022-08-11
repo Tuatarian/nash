@@ -136,3 +136,21 @@ func makeMove*(b : Board, i : u8, whiteMoves : bool) : Board =
         result.wStones.incl i
     else:
         result.bStones.incl i
+
+func varMakeMove*(b : var Board, i : u8, whiteMoves : bool) =
+    if whiteMoves:
+        b.wStones.incl i
+    else:
+        b.bStones.incl i
+
+func diff*(b, b1 : Board) : set[u8] =
+    var b1Ret = b1
+    for i in b.wStones:
+        if i notin b1.wStones:
+            result.incl i
+        b1Ret.wStones.excl i
+    for i in b.bStones:
+        if i notin b1.bStones:
+            result.incl i
+        b1Ret.bStones.excl i
+    result = result + b1Ret.wStones + b1Ret.bStones
