@@ -221,7 +221,7 @@ func getMoves(b : Board) : seq[u8] =
 # func hash(h : Hex) : Hash = hash(h.pos)
 
 let str = "32w22w1w22b13b13b10b"
-let board = str.loadHFen
+var board = str.loadHFen
 
 # var depth : int
 # var turn = 0
@@ -374,20 +374,9 @@ proc mcRollout(n : McNode) : (int, set[uint8], set[uint8]) = # result, wMoves fr
 func mcWalkBack(n : McNode, res : int, wMoves, bMoves : set[uint8]) =
     if n.visits == -1:
         return
-    if n.kids.len == 0:
-        mcWalkBack(n.parentalUnit, res, wMoves, bMoves)
-    if n.whiteMoves: n.wins += 1 - res
-    else: n.wins += res
-    if n.whiteMoves:
-        for kid in n.kids:
-            if kid.move.uint8 in wMoves:
-                kid.wins += res
-                kid.visits += 1
-    else:
-        for kid in n.kids:
-            if kid.move.uint8 in bMoves:
-                kid.wins += 1 - res
-                kid.visits += 1
+    n.visits += 1
+    if n.whiteMoves: n.wins += res
+    else: n.wins += 1 - res
     mcWalkBack(n.parentalUnit, res, wMoves, bMoves)
 
 proc mcMonte(rt : McNode) =
@@ -396,10 +385,32 @@ proc mcMonte(rt : McNode) =
     var res = tNode.mcRollout
     tNode.mcWalkBack(res[0], res[1], res[2])
 
+func mcBest(n : McNode) : McNode =
+    var bestKid : (float, McNode) = (float.low, n.kids[0])
+    for kid in n.kids:
+        let score = kid.wins/kid.visits
+        if score > bestKid[0]:
+            bestKid = (score, kid)
+    return bestKid[1]
+
+proc moveToChild(n : var McNode, s : McNode) =
+    for field in n[].fields:
+        when field is ref:
+            if field != nil and field != s:
+                `=destroy` field
+        else:
+            `=destroy` field
+    n = s
+
+board = Board()
 var mcRoot = McNode(board : board, parentalUnit : McNode(visits : -1))
-for o in 0..100000:
-    if o mod 20000 == 0: echo o
-    mcRoot.mcMonte()
-echo mcRoot.mcPick.board.diff(board).toSeq.map(x => x.pos)
-echo mcRoot.mcPick.board.hFen, " <- ", mcRoot.board.hFen
+while mcCheckVic(board) == 0:
+    for o in 0..100000:
+        if o mod 20000 == 0: echo o
+        mcRoot.mcMonte()
+    echo mcRoot.mcBest.board.diff(board).toSeq.map(x => x.pos)
+    echo mcRoot.mcBest.board.hFen, " <- ", mcRoot.board.hFen
+    moveToChild(mcRoot, mcRoot.mcBest)
+    board = mcRoot.board
+
 
