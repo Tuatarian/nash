@@ -1,4 +1,4 @@
-import raylib, jnhex, zero_functional, sequtils, rayutils, tables, heapqueue, lenientops, sugar, algorithm, random, std/enumerate, hashes, math
+import raylib, jnhex, zero_functional, sequtils, rayutils, tables, heapqueue, lenientops, sugar, algorithm, random, std/enumerate, hashes, math, times
 
 randomize()
 
@@ -306,7 +306,9 @@ func mcCheckVic(b : Board) : int = # 1 for Black, -1 for white, 0 for neutral
         let minx = minIndex sFront
         c = sFront[minx][0]
         sFront.del minx
-        if c.pos.y == 12: return 1
+        if c.pos.x == 12:
+            debugEcho c.pos
+            return -1
 
         for w in getAdj(c):
             if w in b.bStones and w notin seen:
@@ -324,7 +326,7 @@ func mcCheckVic(b : Board) : int = # 1 for Black, -1 for white, 0 for neutral
         let minx = minIndex sFront
         c = sFront[minx][0]
         sFront.del minx
-        if c.pos.x == 12: return -1
+        if c.pos.y == 12: return 1
 
         for w in getAdj(c):
             if w in b.wStones and w notin seen:
@@ -369,7 +371,7 @@ proc mcRollout(n : McNode) : (int, set[uint8], set[uint8]) = # result, wMoves fr
             result[1].incl uint8 i
         else:
             result[2].incl i.uint8
-    result[0] = mcCheckVic b
+    result[0] = 0
 
 func mcWalkBack(n : McNode, res : int, wMoves, bMoves : set[uint8]) =
     if n.visits == -1:
@@ -401,16 +403,16 @@ proc moveToChild(n : var McNode, s : McNode) =
         else:
             `=destroy` field
     n = s
+    n.parentalUnit.visits = -1
 
 board = Board()
 var mcRoot = McNode(board : board, parentalUnit : McNode(visits : -1))
+const tenSec = initDuration(seconds = 2)
 while mcCheckVic(board) == 0:
-    for o in 0..100000:
-        if o mod 20000 == 0: echo o
+    let now = getTime()
+    while getTime() - now <= tenSec:
         mcRoot.mcMonte()
     echo mcRoot.mcBest.board.diff(board).toSeq.map(x => x.pos)
     echo mcRoot.mcBest.board.hFen, " <- ", mcRoot.board.hFen
     moveToChild(mcRoot, mcRoot.mcBest)
     board = mcRoot.board
-
-
