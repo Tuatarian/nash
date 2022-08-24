@@ -48,7 +48,7 @@ func hFen*(b : Board) : string =
         elif i in b.bStones:
             result &= $count & 'b'
             count = 0
-        count += 1
+        else: count += 1
 
 func loadHFen*(inp : string) : Board =
     var shift : string

@@ -407,12 +407,15 @@ proc moveToChild(n : var McNode, s : McNode) =
 
 board = Board()
 var mcRoot = McNode(board : board, parentalUnit : McNode(visits : -1))
-const tenSec = initDuration(seconds = 2)
+const tenSec = initDuration(seconds = 5)
 while mcCheckVic(board) == 0:
+    var iters : uint32
     let now = getTime()
     while getTime() - now <= tenSec:
         mcRoot.mcMonte()
-    echo mcRoot.mcBest.board.diff(board).toSeq.map(x => x.pos)
+        iters += 1
+    echo mcRoot.mcBest.board.diff(board).toSeq.map(x => x.pos), " ", iters
     echo mcRoot.mcBest.board.hFen, " <- ", mcRoot.board.hFen
     moveToChild(mcRoot, mcRoot.mcBest)
     board = mcRoot.board
+    writeFile("IR.txt", board.hFen)
