@@ -2,6 +2,8 @@ import raylib, jnhex, zero_functional, sequtils, rayutils, tables, heapqueue, le
 
 randomize()
 
+func `/`(u, v : SomeUnsignedInt) : float = u.int/v.int
+
 func `in`(i : u8, i2 : (u8, u8)) : bool =
     return i == i2[0] or i == i2[1]
 
@@ -251,7 +253,7 @@ type McNode = ref object
     board : Board
     kids : seq[McNode]
     parentalUnit : McNode
-    wins, visits : int
+    wins, visits : uint32
     whiteMoves : bool
     move : uint8 # Move made to reach state
 
@@ -294,10 +296,10 @@ proc mcGrow(n : McNode) : McNode =
     n.kids.add McNode(parentalUnit : n, whiteMoves : not n.whiteMoves, board : makeMove(n.board, mv, n.whiteMoves), move : mv)
     return n.kids[^1]
 
-func mcCheckVic(b : Board) : int = # 1 for Black, -1 for white, 0 for neutral
+func mcCheckVic(b : Board) : bool = # 1 for Black, -1 for white, 0 for neutral
     var sFront : seq[LocPri]
     for i in 0'u8..12'u8:
-        if i in b.bStones:
+        if i in b.wStones:
             sFront.add (i, 12f64)
     var seen : set[uint8]
     var c : u8 # current
@@ -307,31 +309,34 @@ func mcCheckVic(b : Board) : int = # 1 for Black, -1 for white, 0 for neutral
         c = sFront[minx][0]
         sFront.del minx
         if c.pos.x == 12:
-            debugEcho c.pos
-            return -1
+            # debugEcho "shibu -1"
+            return false
 
         for w in getAdj(c):
-            if w in b.bStones and w notin seen:
-                sFront.add (w, float64(12f64 - w.pos.y))
+            if w in b.wStones and w notin seen:
+                sFront.add (w, float64(12f64 - w.pos.x))
                 seen.incl w
 
-    sFront = @[]
     for i in 0..12:
-      let ind = makevec2(0, i).posToInd
-      if ind in b.wStones:
-          sFront.add (makevec2(0, i).posToInd, 12f64)
+        let ind = makevec2(i, 0).posToInd
+        if ind in b.bStones:
+            sFront.add (ind, 12f64)
     seen = {}
+    c = 0
 
     while sFront.len > 0:
         let minx = minIndex sFront
         c = sFront[minx][0]
         sFront.del minx
-        if c.pos.y == 12: return 1
+        if c.pos.y == 12:
+            # debugEcho "shibu 1"
+            return true
 
         for w in getAdj(c):
-            if w in b.wStones and w notin seen:
+            if w in b.bStones and w notin seen:
                 sFront.add (w, float64(12f64 - w.pos.y))
                 seen.incl w
+    raise newException(Defect, "nobody won?")
 
 
 # proc mcRollout(n : McNode) : int =
@@ -348,7 +353,7 @@ func mcCheckVic(b : Board) : int = # 1 for Black, -1 for white, 0 for neutral
 #         if pwLen(b, c, whiteMoves) == 0: return results[whiteMoves]
 #         whiteMoves = not whiteMoves
 
-proc mcRollout(n : McNode) : (int, set[uint8], set[uint8]) = # result, wMoves from playout, bMoves from playout
+proc mcRollout(n : McNode) : (bool, set[uint8], set[uint8]) = # result, wMoves from playout, bMoves from playout
     var b = n.board
     var movesLeft : set[uint8]
     for i in 0'u8..<bSize:
@@ -356,29 +361,37 @@ proc mcRollout(n : McNode) : (int, set[uint8], set[uint8]) = # result, wMoves fr
             movesLeft.incl uint8 i
     # var whiteMoves = n.whiteMoves # Not using tMoves mod 2 since I want to support impossible positions where one side has more stones
     var r : int
-    let tMoves = movesLeft.len
-    let movesP1 = int grEqCeil(tMoves/2)
+    var tMoves = movesLeft.len
+    var movesP1 = int grEqCeil(tMoves/2)
     for i in movesLeft:
         r = rand(0..<tMoves)
         let wStone = r <= movesP1 == n.whiteMoves
-        b.varMakeMove(r.u8, wStone)
+        b.varMakeMove(i, wStone)
         if wStone:
             result[1].incl i.uint8
+            if n.whiteMoves:
+                movesP1 += -1
         else:
             result[2].incl i.uint8
+            if not n.whiteMoves:
+                movesP1 += -1
+        tMoves += -1
+    `=destroy` r
     for i in 0'u8..<bSize:
         if i in b.wStones:
             result[1].incl uint8 i
         else:
             result[2].incl i.uint8
-    result[0] = 0
+    result[0] = mcCheckVic b
 
-func mcWalkBack(n : McNode, res : int, wMoves, bMoves : set[uint8]) =
-    if n.visits == -1:
+func mcWalkBack(n : McNode, res : bool, wMoves, bMoves : set[uint8]) =
+    if n.move == bSize:
         return
     n.visits += 1
-    if n.whiteMoves: n.wins += res
-    else: n.wins += 1 - res
+    if n.whiteMoves:
+        n.wins += res.uint32
+    else:
+        n.wins += res.not.uint32
     mcWalkBack(n.parentalUnit, res, wMoves, bMoves)
 
 proc mcMonte(rt : McNode) =
@@ -396,26 +409,31 @@ func mcBest(n : McNode) : McNode =
     return bestKid[1]
 
 proc moveToChild(n : var McNode, s : McNode) =
-    for field in n[].fields:
-        when field is ref:
-            if field != nil and field != s:
+    if n != s:
+        for field in n[].fields:
+            when field is ref:
+                if field != nil:
+                    `=destroy` field
+            elif field is seq[McNode]:
+                field.del(field.find s)
                 `=destroy` field
-        else:
-            `=destroy` field
     n = s
-    n.parentalUnit.visits = -1
+    n.parentalUnit.move = bSize
 
 board = Board()
-var mcRoot = McNode(board : board, parentalUnit : McNode(visits : -1))
-const tenSec = initDuration(seconds = 5)
-while mcCheckVic(board) == 0:
-    var iters : uint32
-    let now = getTime()
-    while getTime() - now <= tenSec:
-        mcRoot.mcMonte()
-        iters += 1
-    echo mcRoot.mcBest.board.diff(board).toSeq.map(x => x.pos), " ", iters
-    echo mcRoot.mcBest.board.hFen, " <- ", mcRoot.board.hFen
-    moveToChild(mcRoot, mcRoot.mcBest)
-    board = mcRoot.board
-    writeFile("IR.txt", board.hFen)
+var mcRoot = McNode(board : board, parentalUnit : McNode(move : bSize))
+const tenSec = initDuration(seconds = 10)
+while true:
+  try: discard mcCheckVic(board)
+  except Defect:
+      var iters : uint32
+      let now = getTime()
+      while getTime() - now <= tenSec:
+          mcRoot.mcMonte()
+          iters += 1
+      echo mcRoot.mcBest.board.diff(board).toSeq.map(x => x.pos), " ", iters
+      echo mcRoot.mcBest.board.hFen, " <- ", mcRoot.board.hFen
+      moveToChild(mcRoot, mcRoot.mcBest)
+      board = mcRoot.board
+      writeFile("IR.txt", board.hFen)
+
