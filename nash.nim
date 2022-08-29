@@ -408,6 +408,14 @@ func mcBest(n : McNode) : McNode =
             bestKid = (score, kid)
     return bestKid[1]
 
+func mcMost(n : McNode) : McNode =
+    var bestKid : (uint32, McNode) = (0'u32, n.kids[0])
+    for kid in n.kids:
+        let score = kid.visits
+        if score > bestKid[0]:
+            bestKid = (score, kid)
+    return bestKid[1]
+
 proc moveToChild(n : var McNode, s : McNode) =
     if n != s:
         for field in n[].fields:
@@ -422,8 +430,10 @@ proc moveToChild(n : var McNode, s : McNode) =
 
 board = Board()
 var mcRoot = McNode(board : board, parentalUnit : McNode(move : bSize))
-const tenSec = initDuration(seconds = 10)
+const tenSec = initDuration(seconds = 5)
+var won : bool
 while true:
+  won = true
   try: discard mcCheckVic(board)
   except Defect:
       var iters : uint32
@@ -431,9 +441,10 @@ while true:
       while getTime() - now <= tenSec:
           mcRoot.mcMonte()
           iters += 1
-      echo mcRoot.mcBest.board.diff(board).toSeq.map(x => x.pos), " ", iters
-      echo mcRoot.mcBest.board.hFen, " <- ", mcRoot.board.hFen
-      moveToChild(mcRoot, mcRoot.mcBest)
+      echo mcRoot.mcMost.board.diff(board).toSeq.map(x => x.pos), " ", iters
+      echo mcRoot.mcMost.board.hFen, " <- ", mcRoot.board.hFen
+      moveToChild(mcRoot, mcRoot.mcMost)
       board = mcRoot.board
       writeFile("IR.txt", board.hFen)
-
+      won = false
+  if won: break
